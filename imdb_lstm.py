@@ -1,19 +1,19 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[35]:
 
 
 pip install datasets
 
 
-# In[2]:
+# In[36]:
 
 
 pip --upgrade numpy
 
 
-# In[3]:
+# In[37]:
 
 
 from datasets import load_dataset
@@ -30,7 +30,7 @@ for example in train_dataset.select([0, 1, 2]):
     print(f"Label: {example['label']}, Review: {example['text']}")
 
 
-# In[4]:
+# In[38]:
 
 
 import nltk
@@ -63,7 +63,7 @@ test_dataset = test_dataset.map(lambda x: {'tokens': preprocess_text(x['text'])}
 print(train_dataset[0])
 
 
-# In[5]:
+# In[39]:
 
 
 max_len = 200
@@ -80,7 +80,7 @@ test_dataset = test_dataset.map(lambda x: {'padded_tokens': padding(x['tokens'])
 print(train_dataset[0]['padded_tokens'])
 
 
-# In[6]:
+# In[40]:
 
 
 from collections import Counter
@@ -94,34 +94,34 @@ def build_vocab(data):
 vocab = build_vocab(train_dataset)
 
 
-# In[7]:
+# In[41]:
 
 
 print(vocab)
 
 
-# In[8]:
+# In[42]:
 
 
-vocab
+len(vocab)
 
 
-# In[9]:
+# In[101]:
 
 
-word_to_idx = {word: i+2 for i, (word, _) in enumerate(vocab.items())}
+word_to_idx = {word: i+2 for i, word in enumerate(vocab)}
 word_to_idx['<pad>'] = 0
 word_to_idx['<unk>'] = 1
 
 
-# In[10]:
+# In[102]:
 
 
 def numericalize(tokens):
   return [word_to_idx.get(word, word_to_idx['<unk>']) for word in tokens]
 
 
-# In[11]:
+# In[103]:
 
 
 train_dataset = train_dataset.map(lambda x: {'input_ids': numericalize(x['padded_tokens'])})
@@ -130,13 +130,13 @@ test_dataset = test_dataset.map(lambda x: {'input_ids': numericalize(x['padded_t
 print(train_dataset[0]['input_ids'])
 
 
-# In[12]:
+# In[104]:
 
 
 train_dataset[0]
 
 
-# In[13]:
+# In[105]:
 
 
 import torch
@@ -154,7 +154,7 @@ class IMDBDataset(Dataset):
     return torch.tensor(self.sequences[idx], dtype=torch.float32), torch.tensor(self.labels[idx], dtype=torch.long)
 
 
-# In[14]:
+# In[106]:
 
 
 # Convert the HuggingFace dataset to input_ids and labels
@@ -163,13 +163,13 @@ train_sequences = [item['input_ids'] for item in train_dataset]  # list of seque
 train_labels = [item['label'] for item in train_dataset]  # list of labels
 
 
-# In[25]:
+# In[107]:
 
 
 train_sequences[63]
 
 
-# In[15]:
+# In[108]:
 
 
 test_sequences = [item['input_ids'] for item in test_dataset]
@@ -180,20 +180,20 @@ train_data = IMDBDataset(train_sequences, train_labels)
 test_data = IMDBDataset(test_sequences, test_labels)
 
 
-# In[28]:
+# In[109]:
 
 
 train_data.__getitem__(64)
 
 
-# In[16]:
+# In[110]:
 
 
 print(len(train_data.__getitem__(64)))
 print(len(train_data.__getitem__(63)))
 
 
-# In[60]:
+# In[111]:
 
 
 import torch
@@ -213,7 +213,7 @@ def collate_fn(batch):
     return inputs_padded, labels
 
 
-# In[61]:
+# In[112]:
 
 
 batch_size = 64
@@ -222,13 +222,13 @@ train_loader = DataLoader(train_dataset, batch_size = batch_size, shuffle = True
 test_loader = DataLoader(test_dataset, batch_size = batch_size, shuffle = False, collate_fn = collate_fn)
 
 
-# In[55]:
+# In[113]:
 
 
 print(len(train_loader))
 
 
-# In[56]:
+# In[114]:
 
 
 lengths = [len(item['input_ids']) for item in train_dataset]
@@ -237,19 +237,7 @@ print(f"Maximum sequence length: {max(lengths)}")
 print(f"Average sequence length: {sum(lengths) / len(lengths)}")
 
 
-# In[65]:
-
-
-for inputs, labels in train_loader:
-    print("Input shape:", inputs.shape)    # The shape of input data
-    print("Labels shape:", labels.shape)   # The shape of the labels
-    print("Input size:", inputs.size())    # The size of input data (e.g., batch size x sequence length)
-    print("Labels size:", labels.size())
-
-train_loader[63]
-
-
-# In[62]:
+# In[115]:
 
 
 def Dataloader_by_Index(data_loader, target=0):
@@ -265,7 +253,7 @@ def Dataloader_by_Index(data_loader, target=0):
     return None
 
 
-# In[63]:
+# In[116]:
 
 
 for batch in train_loader:
@@ -274,7 +262,7 @@ for batch in train_loader:
     break  # Just inspect the first batch
 
 
-# In[64]:
+# In[117]:
 
 
 element1 = Dataloader_by_Index(train_loader, target=1)
@@ -284,28 +272,183 @@ print(element1)
 print(element0)
 
 
-# In[82]:
+# In[118]:
+
+
+len(train_loader)
+
+
+# In[119]:
+
+
+for inputs, _ in train_loader:
+    if torch.max(inputs) >= len(vocab):
+        print(f"Out-of-bounds index found in input: {torch.max(inputs)}")
+        break
+
+
+# In[127]:
+
+
+import torch.nn as nn
+
+
+# In[128]:
+
+
+import torch
+import torch.nn as nn
+
+class LSTMClassifier(nn.Module):
+    def __init__(self, vocab_size, embedding_dim, hidden_dim, output_dim):
+        super(LSTMClassifier, self).__init__()
+
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+
+        # LSTM layer: single layer, not bidirectional, with batch_first=True
+        self.lstm = nn.LSTM(input_size=embedding_dim, hidden_size=hidden_dim, num_layers=1, batch_first=True)
+
+        # Dropout layer to prevent overfitting
+        self.dropout = nn.Dropout(0.5)
+
+        # Fully connected layer
+        self.fc = nn.Linear(hidden_dim, output_dim)
+
+        # Sigmoid activation for binary classification
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+
+        print(f"Input indices: {x}")
+        # Embedding the input words into dense vectors
+        embedded = self.embedding(x)
+
+        # LSTM output: returns all hidden states and the final hidden/cell state
+        lstm_out, (hidden, cell) = self.lstm(embedded)
+
+        # Extract the final hidden state for each sequence in the batch
+        final_hidden_state = lstm_out[:, -1, :]  # Take all features of the last time step
+
+        # Apply dropout to the final hidden state
+        dropped_out = self.dropout(final_hidden_state)
+
+        # Pass the hidden state through a fully connected layer
+        output = self.fc(dropped_out)
+
+        # Apply sigmoid activation to get the probability for binary classification
+        output = self.sigmoid(output)
+
+        return output
+
+
+# In[129]:
+
+
+def train_model(model, train_loader, criterion, optimizer, device):
+    model.train()
+
+    running_loss = 0.0
+    for inputs, labels in train_loader:
+        inputs, labels = inputs.to(device), labels.to(device)
+
+
+        outputs = model(inputs)
+        loss = criterion(outputs.squeeze(), labels.float())
+
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item()
+
+    return running_loss / len(train_loader)
+
+
+# In[130]:
+
+
+def evaluate_model(mode, val_loader, criterion, device):
+  model.eval()
+
+  running_loss = 0.0
+  with torch.no_grad():
+    for inputs, labels in val_loader:
+      inputs, lables = inputs.to(device), labels.to(device).float()
+
+      outputs = model(inputs)
+
+      loss = criterion(outputs.squeeze(), labels.float())
+
+      val_loss += loss.item()
+  return val_loss / len(val_loader)
+
+
+# In[131]:
+
+
+def calculate_accuracy(outputs, labels):
+  preds = torch.round(torch.sigmoid(outputs))
+  correct = (preds == labels).float().sum()
+  acc = correct / len(correct)
+  return acc
+
+
+# In[132]:
+
+
+print(len(vocab))
+
+
+# In[133]:
+
+
+import os
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+import torch
+import torch.nn as nn
+from collections import Counter
+
+device = torch.device("cpu")
+
+model = LSTMClassifier(len(vocab), embedding_dim=100, hidden_dim=128, output_dim=1).to(device)
+
+
+# In[134]:
+
+
+num_epochs = 5
+criterion = nn.BCELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+for epoch in range(num_epochs):
+    train_loss = train_model(model, train_loader, criterion, optimizer, device)
+    val_loss = evaluate_model(model, test_loader, criterion, device)
+    print(f"Epoch {epoch+1}, Train Loss: {train_loss}, Val Loss: {val_loss}")
+
+
+# In[137]:
 
 
 from google.colab import drive
 drive.mount('/content/drive')
 
 
-# In[87]:
+# In[141]:
 
 
 import os
-os.listdir('/content/drive/My Drive/Colab Notebooks/imdb_lstm.ipynb')
+os.listdir('/content/drive/My Drive/Colab Notebooks')
 
 
-# In[84]:
+# In[142]:
 
 
 import nbformat
 from nbconvert import PythonExporter
 
 # Load the notebook
-with open("content/drive/My Drive/imdb_lstm.ipynb") as f:
+with open("/content/drive/My Drive/imdb_lstm.ipynb") as f:
     notebook_content = nbformat.read(f, as_version=4)
 
 # Convert to Python script
@@ -317,16 +460,41 @@ with open("imdb_lstm.py", "w") as f:
     f.write(script)
 
 
-# In[72]:
+# In[139]:
 
 
-ls
+# Step 1: Mount Google Drive
+from google.colab import drive
+drive.mount('/content/drive')
 
+# Step 2: Load the Notebook File
+import nbformat
 
-# In[71]:
+# Specify the path to your notebook file (ensure the path is correct)
+notebook_path = '/content/drive/My Drive/imdb_lstm.ipynb'
 
+# Load the notebook content
+with open(notebook_path, 'r', encoding='utf-8') as f:
+    notebook_content = nbformat.read(f, as_version=4)
 
+# Step 3: Convert Notebook to Python Code
+from nbconvert import PythonExporter
 
+# Create an instance of PythonExporter
+exporter = PythonExporter()
+
+# Convert the notebook content to Python code
+python_code, _ = exporter.from_notebook_node(notebook_content)
+
+# Step 4: Save the Converted Python Code
+# Specify the output Python file path
+python_script_path = '/content/drive/My Drive/converted_notebook.py'
+
+# Save the converted Python code
+with open(python_script_path, 'w', encoding='utf-8') as f:
+    f.write(python_code)
+
+print(f"Notebook has been successfully converted to {python_script_path}")
 
 
 # In[ ]:
