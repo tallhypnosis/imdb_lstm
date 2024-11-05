@@ -1,19 +1,19 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[35]:
+# In[2]:
 
 
 pip install datasets
 
 
-# In[36]:
+# In[3]:
 
 
 pip --upgrade numpy
 
 
-# In[37]:
+# In[4]:
 
 
 from datasets import load_dataset
@@ -30,7 +30,7 @@ for example in train_dataset.select([0, 1, 2]):
     print(f"Label: {example['label']}, Review: {example['text']}")
 
 
-# In[38]:
+# In[5]:
 
 
 import nltk
@@ -63,7 +63,7 @@ test_dataset = test_dataset.map(lambda x: {'tokens': preprocess_text(x['text'])}
 print(train_dataset[0])
 
 
-# In[39]:
+# In[6]:
 
 
 max_len = 200
@@ -80,7 +80,7 @@ test_dataset = test_dataset.map(lambda x: {'padded_tokens': padding(x['tokens'])
 print(train_dataset[0]['padded_tokens'])
 
 
-# In[40]:
+# In[7]:
 
 
 from collections import Counter
@@ -94,34 +94,42 @@ def build_vocab(data):
 vocab = build_vocab(train_dataset)
 
 
-# In[41]:
+# In[8]:
 
 
 print(vocab)
 
 
-# In[42]:
+# In[9]:
 
 
 len(vocab)
 
 
-# In[101]:
+# In[10]:
 
 
-word_to_idx = {word: i+2 for i, word in enumerate(vocab)}
+# word_to_idx = {word: i+2 for i, (word, _) in enumerate(vocab.items())}  # +2 to account for padding and unknown tokens
+word_to_idx = {word: i+2 for i, word in enumerate(vocab.keys())}
 word_to_idx['<pad>'] = 0
 word_to_idx['<unk>'] = 1
 
 
-# In[102]:
+# In[12]:
 
 
 def numericalize(tokens):
   return [word_to_idx.get(word, word_to_idx['<unk>']) for word in tokens]
 
 
-# In[103]:
+# In[13]:
+
+
+for item in train_dataset['padded_tokens'][:5]:  # Sample check
+    print(numericalize(item))  # Should only contain indices < vocab_size
+
+
+# In[15]:
 
 
 train_dataset = train_dataset.map(lambda x: {'input_ids': numericalize(x['padded_tokens'])})
@@ -130,13 +138,7 @@ test_dataset = test_dataset.map(lambda x: {'input_ids': numericalize(x['padded_t
 print(train_dataset[0]['input_ids'])
 
 
-# In[104]:
-
-
-train_dataset[0]
-
-
-# In[105]:
+# In[16]:
 
 
 import torch
@@ -154,7 +156,7 @@ class IMDBDataset(Dataset):
     return torch.tensor(self.sequences[idx], dtype=torch.float32), torch.tensor(self.labels[idx], dtype=torch.long)
 
 
-# In[106]:
+# In[17]:
 
 
 # Convert the HuggingFace dataset to input_ids and labels
@@ -163,13 +165,19 @@ train_sequences = [item['input_ids'] for item in train_dataset]  # list of seque
 train_labels = [item['label'] for item in train_dataset]  # list of labels
 
 
-# In[107]:
+# In[18]:
 
 
-train_sequences[63]
+print(f"word_to_idx: {word_to_idx}")
 
 
-# In[108]:
+# In[19]:
+
+
+print(f"Vocab sizes: {len(word_to_idx)}")
+
+
+# In[20]:
 
 
 test_sequences = [item['input_ids'] for item in test_dataset]
@@ -180,27 +188,26 @@ train_data = IMDBDataset(train_sequences, train_labels)
 test_data = IMDBDataset(test_sequences, test_labels)
 
 
-# In[109]:
+# In[21]:
 
 
 train_data.__getitem__(64)
 
 
-# In[110]:
+# In[22]:
 
 
 print(len(train_data.__getitem__(64)))
 print(len(train_data.__getitem__(63)))
 
 
-# In[111]:
+# In[23]:
 
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
 
 def collate_fn(batch):
-    print(f"Batch content: {batch}")
 
     # Accessing 'input_ids' and 'labels' if the dataset is structured as dictionaries
     inputs = [torch.tensor(item['input_ids']) for item in batch]
@@ -213,7 +220,7 @@ def collate_fn(batch):
     return inputs_padded, labels
 
 
-# In[112]:
+# In[24]:
 
 
 batch_size = 64
@@ -222,13 +229,13 @@ train_loader = DataLoader(train_dataset, batch_size = batch_size, shuffle = True
 test_loader = DataLoader(test_dataset, batch_size = batch_size, shuffle = False, collate_fn = collate_fn)
 
 
-# In[113]:
+# In[25]:
 
 
 print(len(train_loader))
 
 
-# In[114]:
+# In[26]:
 
 
 lengths = [len(item['input_ids']) for item in train_dataset]
@@ -237,7 +244,7 @@ print(f"Maximum sequence length: {max(lengths)}")
 print(f"Average sequence length: {sum(lengths) / len(lengths)}")
 
 
-# In[115]:
+# In[27]:
 
 
 def Dataloader_by_Index(data_loader, target=0):
@@ -253,7 +260,7 @@ def Dataloader_by_Index(data_loader, target=0):
     return None
 
 
-# In[116]:
+# In[28]:
 
 
 for batch in train_loader:
@@ -262,7 +269,7 @@ for batch in train_loader:
     break  # Just inspect the first batch
 
 
-# In[117]:
+# In[29]:
 
 
 element1 = Dataloader_by_Index(train_loader, target=1)
@@ -272,13 +279,13 @@ print(element1)
 print(element0)
 
 
-# In[118]:
+# In[30]:
 
 
 len(train_loader)
 
 
-# In[119]:
+# In[31]:
 
 
 for inputs, _ in train_loader:
@@ -287,13 +294,13 @@ for inputs, _ in train_loader:
         break
 
 
-# In[127]:
+# In[32]:
 
 
 import torch.nn as nn
 
 
-# In[128]:
+# In[48]:
 
 
 import torch
@@ -318,8 +325,7 @@ class LSTMClassifier(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-
-        print(f"Input indices: {x}")
+        x = torch.clamp(x, max= self.embedding.num_embeddings - 1)
         # Embedding the input words into dense vectors
         embedded = self.embedding(x)
 
@@ -341,7 +347,7 @@ class LSTMClassifier(nn.Module):
         return output
 
 
-# In[129]:
+# In[49]:
 
 
 def train_model(model, train_loader, criterion, optimizer, device):
@@ -365,13 +371,13 @@ def train_model(model, train_loader, criterion, optimizer, device):
     return running_loss / len(train_loader)
 
 
-# In[130]:
+# In[55]:
 
 
 def evaluate_model(mode, val_loader, criterion, device):
   model.eval()
 
-  running_loss = 0.0
+  val_loss = 0.0
   with torch.no_grad():
     for inputs, labels in val_loader:
       inputs, lables = inputs.to(device), labels.to(device).float()
@@ -384,7 +390,7 @@ def evaluate_model(mode, val_loader, criterion, device):
   return val_loss / len(val_loader)
 
 
-# In[131]:
+# In[56]:
 
 
 def calculate_accuracy(outputs, labels):
@@ -394,13 +400,13 @@ def calculate_accuracy(outputs, labels):
   return acc
 
 
-# In[132]:
+# In[57]:
 
 
 print(len(vocab))
 
 
-# In[133]:
+# In[58]:
 
 
 import os
@@ -411,10 +417,12 @@ from collections import Counter
 
 device = torch.device("cpu")
 
-model = LSTMClassifier(len(vocab), embedding_dim=100, hidden_dim=128, output_dim=1).to(device)
+
+vocab_size = len(word_to_idx)  # This should match the full count of indices in word_to_idx
+model = LSTMClassifier(vocab_size, embedding_dim=100, hidden_dim=128, output_dim=1).to(device)
 
 
-# In[134]:
+# In[59]:
 
 
 num_epochs = 5
@@ -427,43 +435,45 @@ for epoch in range(num_epochs):
     print(f"Epoch {epoch+1}, Train Loss: {train_loss}, Val Loss: {val_loss}")
 
 
-# In[137]:
+# In[39]:
+
+
+for example in train_dataset['padded_tokens'][:5]:
+    numericalized_sequence = numericalize(example)
+    print(f"Numericalized sequence: {numericalized_sequence}")
+    if any(idx >= vocab_size for idx in numericalized_sequence):
+        print("Error: Index out of bounds detected.")
+        break
+
+
+# In[ ]:
+
+
+for batch in train_loader:
+    inputs, labels = batch
+    if inputs.max() >= vocab_s:
+        print(f"Input max index: {inputs.max()} exceeds vocab size {vocab_size}")
+    break
+
+
+# In[1]:
 
 
 from google.colab import drive
 drive.mount('/content/drive')
 
 
-# In[141]:
+# In[5]:
 
 
-import os
-os.listdir('/content/drive/My Drive/Colab Notebooks')
+cd Colab Notebooks
 
 
-# In[142]:
+# 
+
+# In[61]:
 
 
-import nbformat
-from nbconvert import PythonExporter
-
-# Load the notebook
-with open("/content/drive/My Drive/imdb_lstm.ipynb") as f:
-    notebook_content = nbformat.read(f, as_version=4)
-
-# Convert to Python script
-python_exporter = PythonExporter()
-(script, resources) = python_exporter.from_notebook_node(notebook_content)
-
-# Save the script to a .py file
-with open("imdb_lstm.py", "w") as f:
-    f.write(script)
-
-
-# In[139]:
-
-
-# Step 1: Mount Google Drive
 from google.colab import drive
 drive.mount('/content/drive')
 
@@ -489,6 +499,43 @@ python_code, _ = exporter.from_notebook_node(notebook_content)
 # Step 4: Save the Converted Python Code
 # Specify the output Python file path
 python_script_path = '/content/drive/My Drive/converted_notebook.py'
+
+# Save the converted Python code
+with open(python_script_path, 'w', encoding='utf-8') as f:
+    f.write(python_code)
+
+print(f"Notebook has been successfully converted to {python_script_path}")
+
+
+
+# In[62]:
+
+
+from google.colab import drive
+drive.mount('/content/drive')
+
+# Step 2: Load the Notebook File
+import nbformat
+
+# Specify the path to your notebook file (ensure the path is correct)
+notebook_path = '/content/drive/MyDrive/imdb_lstm.ipynb'  # Modified path - removed space in 'My Drive'
+
+# Load the notebook content
+with open(notebook_path, 'r', encoding='utf-8') as f:
+    notebook_content = nbformat.read(f, as_version=4)
+
+# Step 3: Convert Notebook to Python Code
+from nbconvert import PythonExporter
+
+# Create an instance of PythonExporter
+exporter = PythonExporter()
+
+# Convert the notebook content to Python code
+python_code, _ = exporter.from_notebook_node(notebook_content)
+
+# Step 4: Save the Converted Python Code
+# Specify the output Python file path
+python_script_path = '/content/drive/MyDrive/converted_notebook.py' # Modified path - removed space in 'My Drive'
 
 # Save the converted Python code
 with open(python_script_path, 'w', encoding='utf-8') as f:
