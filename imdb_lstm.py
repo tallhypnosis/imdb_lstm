@@ -1,19 +1,19 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[2]:
+# In[1]:
 
 
 pip install datasets
 
 
-# In[3]:
+# In[2]:
 
 
 pip --upgrade numpy
 
 
-# In[4]:
+# In[3]:
 
 
 from datasets import load_dataset
@@ -30,15 +30,20 @@ for example in train_dataset.select([0, 1, 2]):
     print(f"Label: {example['label']}, Review: {example['text']}")
 
 
-# In[5]:
+# In[4]:
 
 
 import nltk
+nltk.download('wordnet')
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
+from nltk.corpus import wordnet as wn
+
 
 nltk.download('punkt')
 nltk.download('stopwords')
+
+nltk.download('punkt_tab')
 
 stop_words = set(stopwords.words('english'))
 
@@ -63,7 +68,7 @@ test_dataset = test_dataset.map(lambda x: {'tokens': preprocess_text(x['text'])}
 print(train_dataset[0])
 
 
-# In[6]:
+# In[5]:
 
 
 max_len = 200
@@ -80,7 +85,7 @@ test_dataset = test_dataset.map(lambda x: {'padded_tokens': padding(x['tokens'])
 print(train_dataset[0]['padded_tokens'])
 
 
-# In[7]:
+# In[6]:
 
 
 from collections import Counter
@@ -94,19 +99,19 @@ def build_vocab(data):
 vocab = build_vocab(train_dataset)
 
 
-# In[8]:
+# In[7]:
 
 
 print(vocab)
 
 
-# In[9]:
+# In[8]:
 
 
 len(vocab)
 
 
-# In[10]:
+# In[9]:
 
 
 # word_to_idx = {word: i+2 for i, (word, _) in enumerate(vocab.items())}  # +2 to account for padding and unknown tokens
@@ -115,21 +120,28 @@ word_to_idx['<pad>'] = 0
 word_to_idx['<unk>'] = 1
 
 
-# In[12]:
+# In[10]:
+
+
+# Reverse mapping from indices to words
+idx_to_word = {idx: word for word, idx in word_to_idx.items()}
+
+
+# In[11]:
 
 
 def numericalize(tokens):
   return [word_to_idx.get(word, word_to_idx['<unk>']) for word in tokens]
 
 
-# In[13]:
+# In[12]:
 
 
 for item in train_dataset['padded_tokens'][:5]:  # Sample check
     print(numericalize(item))  # Should only contain indices < vocab_size
 
 
-# In[15]:
+# In[13]:
 
 
 train_dataset = train_dataset.map(lambda x: {'input_ids': numericalize(x['padded_tokens'])})
@@ -138,25 +150,150 @@ test_dataset = test_dataset.map(lambda x: {'input_ids': numericalize(x['padded_t
 print(train_dataset[0]['input_ids'])
 
 
-# In[16]:
+# In[14]:
 
 
-import torch
-from torch.utils.data import Dataset, DataLoader
-
-class IMDBDataset(Dataset):
-  def __init__(self, sequences, labels):
-    self.sequences = sequences
-    self.labels = labels
-
-  def __len__(self):
-    return len(self.labels)
-
-  def __getitem__(self, idx):
-    return torch.tensor(self.sequences[idx], dtype=torch.float32), torch.tensor(self.labels[idx], dtype=torch.long)
+# Function to decode token IDs into text
+def decode_sequence_to_text(sequence):
+    """Convert a sequence of numerical indices back into a readable text."""
+    words = [idx_to_word.get(idx, '<unk>') for idx in sequence]
+    return ' '.join(word for word in words if word not in ['<pad>', '<unk>'])
 
 
-# In[17]:
+# In[15]:
+
+
+import random
+from torch.utils.data import DataLoader, Dataset
+
+# Synonym replacement augmentation function
+def augment_text_with_synonyms(text, augmentation_probability=0.1):
+    # If input is a list of tokens, join them into a string
+    if isinstance(text, list):
+        text = ' '.join(text)
+
+    words = text.split()
+    augmented_words = []
+    for word in words:
+        if random.random() < augmentation_probability:  # Apply augmentation with probability
+            synonym = get_synonym(word)  # Replace with a synonym
+            if synonym:
+                augmented_words.append(synonym)
+            else:
+                augmented_words.append(word)
+        else:
+            augmented_words.append(word)
+    return ' '.join(augmented_words)  # Return augmented sentence as a string
+
+
+
+def get_synonym(word):
+    synonyms = wn.synsets(word)
+    if synonyms:
+        return synonyms[0].lemmas()[0].name()
+    return None
+
+
+# In[94]:
+
+
+# Custom Dataset class
+class TextDataset(Dataset):
+    def __init__(self, texts, labels):
+        self.texts = texts
+        self.labels = labels
+        # print(f"this is type {type(self.labels[0])}")
+
+    def __len__(self):
+      # print(f"this is type {len(self.texts)} ")
+      return len(self.texts)
+
+
+    def __getitem__(self, idx):
+        # print(f"this is type {type(self.texts[idx])}")
+        return self.texts[idx], self.labels[idx]
+
+
+# In[95]:
+
+
+# Updated apply_partial_augmentation function
+def apply_partial_augmentation(train_sequences, augmentation_probability=0.1, augmentation_rate=0.5):
+    augmented_data = []
+
+    for seq in train_sequences:
+        # Decode token IDs to text
+        text = decode_sequence_to_text(seq)
+
+        # Decide whether to augment
+        if random.random() < augmentation_rate:
+            augmented_text = augment_text_with_synonyms(text, augmentation_probability)
+        else:
+            augmented_text = text
+
+        # Re-encode augmented text back to token IDs
+        # Numericalization using your `word_to_idx` mapping
+        augmented_sequence = [word_to_idx.get(word, word_to_idx['<unk>']) for word in augmented_text.split()]
+
+        # Padding or truncating to match the original sequence length
+        if len(augmented_sequence) < len(seq):
+            augmented_sequence.extend([word_to_idx['<pad>']] * (len(seq) - len(augmented_sequence)))
+        else:
+            augmented_sequence = augmented_sequence[:len(seq)]
+
+        augmented_data.append(augmented_sequence)
+
+    return augmented_data
+
+
+
+
+# Updated prepare_dataloader function
+def prepare_dataloader(train_sequences, train_labels, test_sequences, test_labels,
+                       augmentation_probability, augmentation_rate, batch_size, collate_fn):
+    # Apply augmentation to training sequences
+    augmented_sequences = apply_partial_augmentation(
+        train_sequences,
+        augmentation_probability=augmentation_probability,
+        augmentation_rate=augmentation_rate
+    )
+
+    # Create datasets
+    augmented_dataset = TextDataset(augmented_sequences, train_labels)
+    val_dataset = TextDataset(test_sequences, test_labels)
+
+    # Create DataLoader objects
+    train_loader = DataLoader(augmented_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
+
+    return train_loader, val_loader
+
+
+# In[96]:
+
+
+# import torch
+# from torch.utils.data import Dataset, DataLoader
+
+# class IMDBDataset(Dataset):
+#   def __init__(self, sequences, labels):
+#     self.sequences = sequences
+#     self.labels = labels
+
+#   def __len__(self):
+#     return len(self.labels)
+
+#   def __getitem__(self, idx):
+#     return torch.tensor(self.sequences[idx], dtype=torch.float32), torch.tensor(self.labels[idx], dtype=torch.long)
+
+
+# In[96]:
+
+
+
+
+
+# In[97]:
 
 
 # Convert the HuggingFace dataset to input_ids and labels
@@ -165,142 +302,153 @@ train_sequences = [item['input_ids'] for item in train_dataset]  # list of seque
 train_labels = [item['label'] for item in train_dataset]  # list of labels
 
 
-# In[18]:
+# In[98]:
 
 
 print(f"word_to_idx: {word_to_idx}")
 
 
-# In[19]:
+# In[99]:
 
 
 print(f"Vocab sizes: {len(word_to_idx)}")
 
 
-# In[20]:
+# In[100]:
 
 
 test_sequences = [item['input_ids'] for item in test_dataset]
 test_labels = [item['label'] for item in test_dataset]
 
 # Create PyTorch Dataset
-train_data = IMDBDataset(train_sequences, train_labels)
-test_data = IMDBDataset(test_sequences, test_labels)
+# train_data = IMDBDataset(train_sequences, train_labels)
+# test_data = IMDBDataset(test_sequences, test_labels)
 
 
-# In[21]:
+
+# In[101]:
 
 
-train_data.__getitem__(64)
+# import torch
+# from torch.nn.utils.rnn import pad_sequence
 
+# def collate_fn(batch):
 
-# In[22]:
+#     # Accessing 'input_ids' and 'labels' if the dataset is structured as dictionaries
+#     inputs = [torch.tensor(item['input_ids']) for item in batch]
+#     labels = [item['label'] for item in batch]
 
+#     # Padding inputs and converting labels to tensors
+#     inputs_padded = pad_sequence(inputs, batch_first=True, padding_value=0)
+#     labels = torch.tensor(labels)
 
-print(len(train_data.__getitem__(64)))
-print(len(train_data.__getitem__(63)))
+#     return inputs_padded, labels
 
-
-# In[23]:
-
-
-import torch
-from torch.nn.utils.rnn import pad_sequence
 
 def collate_fn(batch):
-
-    # Accessing 'input_ids' and 'labels' if the dataset is structured as dictionaries
-    inputs = [torch.tensor(item['input_ids']) for item in batch]
-    labels = [item['label'] for item in batch]
-
-    # Padding inputs and converting labels to tensors
-    inputs_padded = pad_sequence(inputs, batch_first=True, padding_value=0)
-    labels = torch.tensor(labels)
-
-    return inputs_padded, labels
+    # Extract texts and labels
+    texts, labels = zip(*batch)
+    # Convert to tensors
+    texts_tensor = torch.tensor(texts, dtype=torch.long)
+    labels_tensor = torch.tensor(labels, dtype=torch.long)
+    return texts_tensor, labels_tensor
 
 
-# In[24]:
+# In[102]:
 
 
-batch_size = 64
+batch_size = 96
 
-train_loader = DataLoader(train_dataset, batch_size = batch_size, shuffle = True, collate_fn=collate_fn)
-test_loader = DataLoader(test_dataset, batch_size = batch_size, shuffle = False, collate_fn = collate_fn)
+train_loader, val_loader = prepare_dataloader(
+    train_sequences,
+    train_labels,
+    test_sequences,
+    test_labels,
+    augmentation_probability=0.1,
+    augmentation_rate=0.5,
+    batch_size=96,
+    collate_fn=collate_fn
+)
+
+# train_loader = DataLoader(train_dataset, batch_size = batch_size, shuffle = True, collate_fn=collate_fn)
+# test_loader = DataLoader(test_dataset, batch_size = batch_size, shuffle = False, collate_fn = collate_fn)
 
 
-# In[25]:
+# In[103]:
 
 
 print(len(train_loader))
 
 
-# In[26]:
+# In[104]:
 
 
-lengths = [len(item['input_ids']) for item in train_dataset]
-print(f"Minimum sequence length: {min(lengths)}")
-print(f"Maximum sequence length: {max(lengths)}")
-print(f"Average sequence length: {sum(lengths) / len(lengths)}")
+# lengths = [len(item['input_ids']) for item in train_dataset]
+# print(f"Minimum sequence length: {min(lengths)}")
+# print(f"Maximum sequence length: {max(lengths)}")
+# print(f"Average sequence length: {sum(lengths) / len(lengths)}")
 
 
-# In[27]:
+# In[105]:
 
 
-def Dataloader_by_Index(data_loader, target=0):
-    try:
-        print(f"Attempting to retrieve batch {target}")
-        for index, data in enumerate(data_loader):
-            print(f"Current index: {index}, data length: {len(data)}")  # Debugging print
-            if index == target:
-                print(f"Returning data for index {index}")
-                return data  # Return the batch when the target index is hit
-    except Exception as e:
-        print(f"Error: {e}")
-    return None
+# def Dataloader_by_Index(data_loader, target=0):
+#     try:
+#         print(f"Attempting to retrieve batch {target}")
+#         for index, data in enumerate(data_loader):
+#             print(f"Current index: {index}, data length: {len(data)}")  # Debugging print
+#             if index == target:
+#                 print(f"Returning data for index {index}")
+#                 return data  # Return the batch when the target index is hit
+#     except Exception as e:
+#         print(f"Error: {e}")
+#     return None
 
 
-# In[28]:
+# In[106]:
 
 
 for batch in train_loader:
-    print(f"Shape of inputs: {batch[0].shape}")
-    print(f"Shape of labels: {batch[1].shape}")
-    break  # Just inspect the first batch
+    inputs, labels = batch  # Unpack the tuple
+    print(f"Shape of inputs: {len(inputs)}")  # Check the batch size
+    print(f"Shape of labels: {len(labels)}")  # Check the batch size
+    print(f"Sample input: {inputs[0]}")       # Inspect the first input sequence
+    print(f"Sample label: {labels[0]}")       # Inspect the first label
+    break
 
 
-# In[29]:
+# In[107]:
 
 
-element1 = Dataloader_by_Index(train_loader, target=1)
-element0 = Dataloader_by_Index(train_loader, target=0)
+# element1 = Dataloader_by_Index(train_loader, target=1)
+# element0 = Dataloader_by_Index(train_loader, target=0)
 
-print(element1)
-print(element0)
+# print(element1)
+# print(element0)
 
 
-# In[30]:
+# In[108]:
 
 
 len(train_loader)
 
 
-# In[31]:
+# In[109]:
 
 
-for inputs, _ in train_loader:
-    if torch.max(inputs) >= len(vocab):
-        print(f"Out-of-bounds index found in input: {torch.max(inputs)}")
-        break
+# for inputs, _ in train_loader:
+#     if torch.max(inputs) >= len(vocab):
+#         print(f"Out-of-bounds index found in input: {torch.max(inputs)}")
+#         break
 
 
-# In[32]:
+# In[110]:
 
 
 import torch.nn as nn
 
 
-# In[48]:
+# In[111]:
 
 
 import torch
@@ -315,8 +463,11 @@ class LSTMClassifier(nn.Module):
         # LSTM layer: single layer, not bidirectional, with batch_first=True
         self.lstm = nn.LSTM(input_size=embedding_dim, hidden_size=hidden_dim, num_layers=1, batch_first=True)
 
+        self.batch_norm_output = nn.BatchNorm1d(hidden_dim)
+
+
         # Dropout layer to prevent overfitting
-        self.dropout = nn.Dropout(0.5)
+        self.dropout = nn.Dropout(0.7)
 
         # Fully connected layer
         self.fc = nn.Linear(hidden_dim, output_dim)
@@ -335,6 +486,9 @@ class LSTMClassifier(nn.Module):
         # Extract the final hidden state for each sequence in the batch
         final_hidden_state = lstm_out[:, -1, :]  # Take all features of the last time step
 
+
+        final_hidden_state = self.batch_norm_output(final_hidden_state)
+
         # Apply dropout to the final hidden state
         dropped_out = self.dropout(final_hidden_state)
 
@@ -347,7 +501,7 @@ class LSTMClassifier(nn.Module):
         return output
 
 
-# In[49]:
+# In[112]:
 
 
 def train_model(model, train_loader, criterion, optimizer, device):
@@ -371,7 +525,7 @@ def train_model(model, train_loader, criterion, optimizer, device):
     return running_loss / len(train_loader)
 
 
-# In[55]:
+# In[113]:
 
 
 def evaluate_model(mode, val_loader, criterion, device):
@@ -380,7 +534,7 @@ def evaluate_model(mode, val_loader, criterion, device):
   val_loss = 0.0
   with torch.no_grad():
     for inputs, labels in val_loader:
-      inputs, lables = inputs.to(device), labels.to(device).float()
+      inputs, labels = inputs.to(device), labels.to(device).float()
 
       outputs = model(inputs)
 
@@ -390,7 +544,7 @@ def evaluate_model(mode, val_loader, criterion, device):
   return val_loss / len(val_loader)
 
 
-# In[56]:
+# In[114]:
 
 
 def calculate_accuracy(outputs, labels):
@@ -400,13 +554,13 @@ def calculate_accuracy(outputs, labels):
   return acc
 
 
-# In[57]:
+# In[115]:
 
 
 print(len(vocab))
 
 
-# In[58]:
+# In[116]:
 
 
 import os
@@ -415,100 +569,98 @@ import torch
 import torch.nn as nn
 from collections import Counter
 
-device = torch.device("cpu")
+# Check if CUDA is available (Colab GPUs use CUDA)
+if torch.cuda.is_available():
+    device = torch.device("cuda")  # Use 'cuda' for Colab GPU
+    print("GPU is available and being used.")
+else:
+    device = torch.device("cpu")
+    print("GPU not found, using CPU instead.")
 
-
-vocab_size = len(word_to_idx)  # This should match the full count of indices in word_to_idx
+vocab_size = len(word_to_idx)
 model = LSTMClassifier(vocab_size, embedding_dim=100, hidden_dim=128, output_dim=1).to(device)
 
 
-# In[59]:
+# In[117]:
 
 
-num_epochs = 5
-criterion = nn.BCELoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+num_epochs = 20
+criterion = nn.BCEWithLogitsLoss()
+
+optimizer = torch.optim.Adam(model.parameters(), lr=5e-4, weight_decay=1e-4)
+
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=2, factor=0.5, verbose=True)
+
+
+# Early stopping implementation
+best_val_loss = float('inf')
+patience = 10  # Number of epochs to wait before stopping
+counter = 0
 
 for epoch in range(num_epochs):
     train_loss = train_model(model, train_loader, criterion, optimizer, device)
-    val_loss = evaluate_model(model, test_loader, criterion, device)
+    val_loss = evaluate_model(model, val_loader, criterion, device)
+
     print(f"Epoch {epoch+1}, Train Loss: {train_loss}, Val Loss: {val_loss}")
 
+    scheduler.step(val_loss)
 
-# In[39]:
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
+        counter = 0
+        torch.save(model.state_dict(), 'best_model.pt')  # Save the best model
+    else:
+        counter += 1
+        if counter >= patience:
+            print("Early stopping triggered!")
+            break
 
-
-for example in train_dataset['padded_tokens'][:5]:
-    numericalized_sequence = numericalize(example)
-    print(f"Numericalized sequence: {numericalized_sequence}")
-    if any(idx >= vocab_size for idx in numericalized_sequence):
-        print("Error: Index out of bounds detected.")
-        break
-
-
-# In[ ]:
-
-
-for batch in train_loader:
-    inputs, labels = batch
-    if inputs.max() >= vocab_s:
-        print(f"Input max index: {inputs.max()} exceeds vocab size {vocab_size}")
-    break
+# Load the best model
+model.load_state_dict(torch.load('best_model.pt'))
 
 
-# In[1]:
+# In[119]:
 
 
-from google.colab import drive
-drive.mount('/content/drive')
+# Move model to device
+model.to(device)
+
+# Training loop
+for epoch in range(num_epochs):
+    model.train()
+    train_loss = 0
+    for texts, labels in train_loader:
+        # Move texts and labels to device
+        texts, labels = texts.to(device), labels.to(device)
+
+        # Forward pass
+        optimizer.zero_grad()
+        outputs = model(texts)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+        train_loss += loss.item()
+
+    # Validation
+    model.eval()
+    val_loss = 0
+    with torch.no_grad():
+        for texts, labels in val_loader:
+            # Move texts and labels to device
+            texts, labels = texts.to(device), labels.to(device)
+
+            outputs = model(texts)
+            loss = criterion(outputs, labels)
+            val_loss += loss.item()
+
+    # Print epoch results
+    print(f"Epoch {epoch+1}, Train Loss: {train_loss/len(train_loader)}, Val Loss: {val_loss/len(val_loader)}")
+
+    # Scheduler step
+    scheduler.step(val_loss / len(val_loader))
 
 
-# In[5]:
-
-
-cd Colab Notebooks
-
-
-# 
-
-# In[61]:
-
-
-from google.colab import drive
-drive.mount('/content/drive')
-
-# Step 2: Load the Notebook File
-import nbformat
-
-# Specify the path to your notebook file (ensure the path is correct)
-notebook_path = '/content/drive/My Drive/imdb_lstm.ipynb'
-
-# Load the notebook content
-with open(notebook_path, 'r', encoding='utf-8') as f:
-    notebook_content = nbformat.read(f, as_version=4)
-
-# Step 3: Convert Notebook to Python Code
-from nbconvert import PythonExporter
-
-# Create an instance of PythonExporter
-exporter = PythonExporter()
-
-# Convert the notebook content to Python code
-python_code, _ = exporter.from_notebook_node(notebook_content)
-
-# Step 4: Save the Converted Python Code
-# Specify the output Python file path
-python_script_path = '/content/drive/My Drive/converted_notebook.py'
-
-# Save the converted Python code
-with open(python_script_path, 'w', encoding='utf-8') as f:
-    f.write(python_code)
-
-print(f"Notebook has been successfully converted to {python_script_path}")
-
-
-
-# In[62]:
+# In[120]:
 
 
 from google.colab import drive
@@ -543,6 +695,14 @@ with open(python_script_path, 'w', encoding='utf-8') as f:
 
 print(f"Notebook has been successfully converted to {python_script_path}")
 
+
+# In[133]:
+
+
+pwd
+
+
+# 
 
 # In[ ]:
 
